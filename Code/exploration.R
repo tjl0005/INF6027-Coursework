@@ -2,7 +2,6 @@
 # Initial Exploration of Data
 # **************************************************************#
 library(tidyverse)
-library(dplyr)
 
 licenses_gender <- read_excel(
   "./Data/Raw/driving-licence-data-sep-2024.xlsx",

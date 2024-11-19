@@ -2,8 +2,6 @@
 # Cleaning and Pre-Processing Data R File
 # **************************************************************#
 library(tidyverse)
-library(dplyr)
-library(readxl)
 
 # **************************************************************#
 # Reading Data
@@ -13,25 +11,30 @@ licenses_gender <- read_excel(
   sheet = "DRL0131 - September 2024",
   skip = 24
 )
+
 licenses_location <- read_excel(
   "./Data/Raw/driving-licence-data-sep-2024.xlsx",
   sheet = "DRL0132- September 2024",
   skip = 24
 )
+
 collisions <- read_csv("./Data/Raw/dft-road-casualty-statistics-collision-last-5-years.csv")
 casualties <- read_csv("./Data/Raw/dft-road-casualty-statistics-casualty-last-5-years.csv")
 
+districts <- read_csv("./Data/pcd11_par11_wd11_lad11_ew_lu.csv")
+
 # **************************************************************#
-# Licenses Gender Data - Producing separate tables for genders
-# Age Group, 1-4 Points, 5-8 Points, 9-12 Points, 12+ Points
+# Grouping Points Data by Age and Point Totals
 # **************************************************************#
 group_by_age <- function(data_to_be_grouped) {
   # Grouping data by ages with respective points and providing total no. points
-  # Does require data passed to have first column as ages.
   grouped_ages <- data_to_be_grouped %>%
-    mutate(Age = as.numeric(`...2`)) %>% # New column of ages as integers
+    mutate(
+      # New column of ages as integers
+      Age = as.numeric(`...2`)
+      ) %>%
     group_by(
-      Age_Group = case_when(
+      age_band_of_driver  = case_when(
         # Grouping rows by new age column
         Age >= 16 & Age <= 20 ~ "16-20",
         Age >= 21 & Age <= 25 ~ "21-25",
@@ -41,10 +44,13 @@ group_by_age <- function(data_to_be_grouped) {
         Age >= 56 & Age <= 65 ~ "56-65",
         Age >= 66 & Age <= 75 ~ "66-75",
         Age > 75 ~ "75+"
-      )
+      ),
+      # Grouping by sex of driver so its retained
+      sex_of_driver
     ) %>%
-    select(-`...2`, -"Age") %>%  # Removing extra columns before totals
-    summarise(across(everything(), ~ sum(as.numeric(.)))) # Calculating totals of each group
+    # Calculating totals of each group
+    summarise(across(everything(), ~ sum(as.numeric(.))),
+              .groups = "drop")
   
   return(grouped_ages)
 }
@@ -54,217 +60,238 @@ group_by_points <- function(data_to_be_grouped) {
   grouped_points <- data_to_be_grouped %>%
     # Creating new columns and populating with row sums for specified age groups
     mutate(
-      `1-3 Points` = rowSums(select_if(., is.numeric) %>% select(1:3)),
-      `5-8 Points` = rowSums(select_if(., is.numeric) %>% select(5:8)),
-      `9-12 Points` = rowSums(select_if(., is.numeric) %>% select(9:12)),
-      `12+ Points` = rowSums(select_if(., is.numeric) %>% select(13:ncol(.)))
-    ) %>%
-    # Retaining descriptive, point and total columns only
-    select(1, `1-3 Points`, `5-8 Points`, `9-12 Points`, `12+ Points`, Total)
+      # Selecting points columns so that can be reffered to in summations
+      point_columns = (select_if(., is.numeric)),
+      # Each point group has hard coded indexes as learnt from exploration
+      `1-3 Points` = rowSums(point_columns
+                             %>% select(2:4)),
+      `5-8 Points` = rowSums(point_columns
+                             %>% select(6:9)),
+      `9-12 Points` = rowSums(point_columns
+                              %>% select(10:13)),
+      `12+ Points` = rowSums(select_if(., is.numeric)
+                             %>% select(14:ncol(.) - 1))
+    ) 
   
   return(grouped_points)
 }
 
-# Removing irrelevant data
+# **************************************************************#
+# Licenses Gender Data - Producing separate tables for genders
+# Age Group, 1-4 Points, 5-8 Points, 9-12 Points, 12+ Points
+# **************************************************************#
 licenses <- licenses_gender %>%
-  slice(2:(n() - 1)) %>% # Removing first and last row as they are labels
-  select(-1, -"Current Pts") # Removing "Current Pts" column
+  # Removing rows and columns that are labels
+  slice(2:(n() - 1)) %>%
+  select(-1, -"Current Pts") %>%
+  # New column to specify gender of row, using hard coded indexes
+  mutate(
+    sex_of_driver = case_when(
+      row_number() <= 86 ~ "Female",
+      row_number() > 86 ~ "Male"
+    )
+  )
 
-# Splitting data by gender, row indexes hard coded as known from original data
-# NOTE: May change to dynamic so different time-periods can be handled
-females <- licenses %>%
-  slice(1:86)
-males <- licenses %>%
-  slice(87:172)
 
-# Female Tables
-female_ages <- group_by_age(females)
-female_points <- group_by_points(female_ages)
+all_points_by_age <- group_by_age(licenses)
+grouped_points_by_age <- group_by_points(all_points_by_age)
 
-write.csv(female_ages, "./Data/Clean/female_ages.csv")
-write.csv(female_points, "./Data/Clean/female_points.csv")
+# Finalising data
+grouped_points_by_age <- grouped_points_by_age %>%
+  # Calculating percentage for each row
+  mutate(
+    total = `1-3 Points` + `5-8 Points` + `9-12 Points` + `12+ Points`,
+    total_point_holders = sum(total),
+    percentage = (total / total_point_holders) * 100
+  ) %>%
+  # Retaining gender, age group, point and total columns only
+  select(
+    sex_of_driver,
+    1,
+    `1-3 Points`,
+    `5-8 Points`,
+    `9-12 Points`,
+    `12+ Points`,
+    total,
+    percentage
+  )
 
-# Male Tables
-male_ages <- group_by_age(males)
-male_points <- group_by_points(male_ages)
-
-write.csv(male_ages, "./Data/Clean/male_ages.csv")
-write.csv(male_points, "./Data/Clean/male_points.csv")
-
-# Cominbed Tables
-all_ages <- group_by_age(licenses)
-all_points <- group_by_points(all_ages)
-
-write.csv(all_ages, "./Data/Clean/all_ages.csv")
-write.csv(all_points, "./Data/Clean/all_points.csv")
+write.csv(all_points_by_age, "./Data/Clean/all_points_by_age.csv")
+write.csv(grouped_points_by_age, "./Data/Clean/grouped_points_by_age.csv")
 
 # **************************************************************#
 # Licenses Location Data - Producing tables for Districts
-# Outward, 1-4 Points, 5-8 Points, 9-12 Points, 12+ Points
+# district_code, 1-4 Points, 5-8 Points, 9-12 Points, 12+ Points
 # **************************************************************#
-# Removing irrelevant data
+# Removing labels
 licenses_districts <- licenses_location %>%
-  slice(2:(n() - 1)) %>% # Removing first and last row as they are labels
-  select(-"Current Pts") # Removing "Current Pts" column
+  slice(2:(n() - 1)) %>%
+  select(-"Current Pts")
 
-# Extracting outward codes and using regex to keep valid codes
-outward <- unique(substr(licenses_districts[[1]], 1, 2))
-valid_outward <- outward[grep("^[A-Za-z]{1,2}$", outward)]
+# Extracting district codes and using regex to keep valid codes
+district_code <- unique(substr(licenses_districts[[1]], 1, 2))
+valid_district <- district_code[grep("^[A-Za-z]{1,2}$", district_code)]
 
-# Grouping data by postcode outwards
-grouped_district_points <- licenses_districts %>%
-  mutate(Outward = substr(...1, 1, 2)) %>% # New outward column containing first two chars of district
-  filter(Outward %in% valid_outward) %>% # Filter using identified valid outwards
-  mutate(across(`1`:`48`, as.numeric)) %>% # Converting point columns to numeric for calculation
-  group_by(Outward) %>%
-  summarise(across(`1`:`48`, sum)) %>%  # Summing the points per outward group
-  mutate(Total = rowSums(across(`1`:`42`))) # Adding a Total column
+# Grouping data by postcode district
+district_points <- licenses_districts %>%
+  # New district column and then filtering using valid outwards as districts
+  mutate(district_code = substr(...1, 1, 2)) %>%
+  filter(district_code %in% valid_district) %>%
+  group_by(district_code) %>%
+  # New total column containing totals per district
+  summarise(across(`1`:`48`, ~ sum(as.numeric(.)))) %>%
+  mutate(Total = rowSums(across(`1`:`42`)))
 
 # Using function from gender data to group the districts by points
-grouped_district_points <- group_by_points(grouped_district_points)
+grouped_district_points <- group_by_points(district_points) %>%
+  # Retaining district, point and total columns only
+  select(1, `1-3 Points`, `5-8 Points`, `9-12 Points`, `12+ Points`, Total) %>%
+  # Removing anomaly where only 1 penalty point holder
+  filter(Total != 1)
 
-write.csv(grouped_district_points,
-          "./Data/Clean/grouped_district_points.csv")
+write.csv(grouped_district_points, "./Data/Clean/grouped_district_points.csv")
 
 # **************************************************************#
 # Resolving Duplicates (Identified in Exploration)
 # **************************************************************#
-# Re-using function from exploration
+# Re-using function from exploration to get duplicates
 check_duplicated_variable <- function(data, variable, view_data = TRUE) {
-  # Frequency table for passed variable, only keeping instances where the count
-  # is higher than 1 as identified as duplicate.
+  # Only keeping variables with more than one instance (duplicated)
   instance_count <- data.frame(table(data[[variable]]))
   instance_count[instance_count$Freq > 1, ]
   
-  # Taking passed data and only keeping rows where the passed variable has an
-  # instance count higher than 1 (duplicate).
+  # Only keeping rows where there have been multiple instances identified
   duplicated_data <- data[data[[variable]] %in% instance_count$Var1[instance_count$Freq > 1], ]
   
-  cat(nrow(duplicated_data), "duplicated") # Print number of duplicates
+  # Number of duplicates
+  cat(nrow(duplicated_data), "duplicates")
   
   if (view_data) {
     view(duplicated_data)
   }
 }
 
-# Able to identify relevant casualties (the drivers at time of collision)
-# through reference and class being 1.
+# Able to identify drivers by reference and class being 1, otherwise causality
 drivers <- casualties[casualties[["casualty_reference"]] == 1 &
                         casualties[["casualty_class"]] == 1, ]
 
-# Checking for remaining duplicates
+# Checking for remaining duplicates, can see due to different years
 duplicate_drivers <- check_duplicated_variable(drivers, "accident_reference")
 
 # New id from accident_year and accident_reference, applying to both
 # drivers and collisions. Using year for better readability.
-drivers <- drivers %>%
+unique_drivers <- drivers %>%
   mutate(id = paste0(accident_reference, accident_year)) %>%
   rename(sex_of_driver = sex_of_casualty, age_band_of_driver = age_band_of_casualty, )
 
-collisions <- collisions %>%
+unique_collisions <- collisions %>%
   mutate(id = paste0(accident_reference, accident_year))
 
 # Final check for duplicates, not viewing as no duplicates to be viewed.
-duplicate_drivers <- check_duplicated_variable(drivers, "id", FALSE)
-duplicate_collisions <- check_duplicated_variable(collisions, "id", FALSE)
+check_duplicated_variable(unique_drivers, "id", FALSE)
+check_duplicated_variable(unique_collisions, "id", FALSE)
 
 # **************************************************************#
 # Resolving Missing Values (Identified in Exploration)
 # **************************************************************#
-# Missing collision data
-collisions <- collisions[collisions$light_conditions != -1, ]
-collisions <- collisions[!collisions$weather_conditions %in% c(-1, 8, 9), ]
-collisions <- collisions[!collisions$road_surface_conditions %in% c(-1, 9), ]
+# Removing rows in collisions without relevant data
+full_collisions <- unique_collisions %>%
+  filter(
+    light_conditions != -1,
+    !weather_conditions %in% c(-1, 8, 9),
+    !road_surface_conditions %in% c(-1, 9)
+  )
 
-# Missing driver data
-drivers <- drivers[drivers$sex_of_driver != -1, ]
-drivers <- drivers[drivers$age_band_of_driver != -1, ]
+# Removing rows in drivers without relevant data
+full_drivers <- unique_drivers %>%
+  filter(
+    sex_of_driver != -1,
+    age_band_of_driver != -1
+  )
 
 # **************************************************************#
-# Collisions
+# Finalising variables
 # **************************************************************#
-# Selecting relevant columns to keep
-collisions <- collisions %>% select(
-  id,
-  accident_severity,
-  local_authority_district,
-  light_conditions,
-  weather_conditions,
-  road_surface_conditions
-)
-
-# Decoding readability
-collisions <- collisions %>%
+# Decoding condition variables into safe, questionable, unsafe
+decoded_collisions <- full_collisions %>%
   mutate(
-    accident_severity = case_when(
-      accident_severity == 1 ~ "Slight",
-      accident_severity == 2 ~ "Serious",
-      accident_severity == 3 ~ "Fatal",
-    ),
     light_conditions = case_when(
-      light_conditions == 1 ~ "Daylight",
-      light_conditions == 4 ~ "Darkness - lights lit",
-      light_conditions == 5 ~ "Darkness - lights unlit",
-      light_conditions == 6 ~ "Darkness - no lighting",
-      light_conditions == 7 ~ "Darkness - lighting unknown"
+      light_conditions == 1 ~ "0",
+      light_conditions == 4 ~ "1",
+      light_conditions == 5 ~ "2",
+      light_conditions == 6 ~ "2",
+      light_conditions == 7 ~ "1"
     ),
     weather_conditions = case_when(
-      weather_conditions == 1 ~ "Fine no high winds",
-      weather_conditions == 2 ~ "Raining no high winds",
-      weather_conditions == 3 ~ "Snowing no high winds",
-      weather_conditions == 4 ~ "Fine + high winds",
-      weather_conditions == 5 ~ "Raining + high winds",
-      weather_conditions == 6 ~ "Snowing + high winds",
-      weather_conditions == 7 ~ "Fog or Mist"
+      weather_conditions == 1 ~ "0",
+      weather_conditions == 2 ~ "1",
+      weather_conditions == 3 ~ "2",
+      weather_conditions == 4 ~ "1",
+      weather_conditions == 5 ~ "3",
+      weather_conditions == 6 ~ "3",
+      weather_conditions == 7 ~ "1"
     ),
     road_surface_conditions = case_when(
-      road_surface_conditions == 1 ~ "Dry",
-      road_surface_conditions == 2 ~ "Wet or Damp",
-      road_surface_conditions == 3 ~ "Snow",
-      road_surface_conditions == 4 ~ "Frost or Ice",
-      road_surface_conditions == 5 ~ "Flood, over 3cm deep",
-      road_surface_conditions == 6 ~ "Oil or Diesel",
-      road_surface_conditions == 7 ~ "Mud"
+      road_surface_conditions == 1 ~ "0",
+      road_surface_conditions == 2 ~ "1",
+      road_surface_conditions == 3 ~ "2",
+      road_surface_conditions == 4 ~ "2",
+      road_surface_conditions == 5 ~ "2",
+      road_surface_conditions == 6 ~ "2",
+      road_surface_conditions == 7 ~ "1"
     )
   )
 
-write.csv(collisions, "./Data/Clean/collisions.csv")
-
-# **************************************************************#
-# Drivers
-# **************************************************************#
-# Specifying variables to keep
-drivers <- drivers %>% select(id, sex_of_driver, age_band_of_driver, casualty_severity)
-
 # Decoding variables to match license data and improve readability
-drivers <- drivers %>%
+decoded_drivers <- full_drivers %>%
   mutate(
-    sex_of_driver = case_when(sex_of_driver == 1 ~ "Female", sex_of_driver == 2 ~ "Male", ),
-    casualty_severity = case_when(
-      casualty_severity == 1 ~ "Slight",
-      casualty_severity == 2 ~ "Serious",
-      casualty_severity == 3 ~ "Fatal",
-    ),
+    sex_of_driver = case_when(
+      sex_of_driver == 1 ~ "Female", 
+      sex_of_driver == 2 ~ "Male"),
     age_band_of_driver = case_when(
       age_band_of_driver == 4 ~ "16-20",
       age_band_of_driver == 5 ~ "21-25",
       age_band_of_driver == 6 ~ "26-35",
-      age_band_of_driver == 7 ~ "46-55",
-      age_band_of_driver == 8 ~ "56-65",
-      age_band_of_driver == 9 ~ "66-75",
+      age_band_of_driver == 7 ~ "36-45",
+      age_band_of_driver == 8 ~ "46-55",
+      age_band_of_driver == 9 ~ "56-65",
+      age_band_of_driver == 10 ~ "66-75",
+      age_band_of_driver == 11 ~ "75+"
     )
   )
 
-write.csv(drivers, "./Data/Clean/drivers")
+# Setting to substring to represent the hour
+decoded_collisions$time <- substr(decoded_collisions$time, 1, 2)
 
 # **************************************************************#
 # Merging Collision and casualty Data
 # **************************************************************#
-complete_driver_collisions <- merge(drivers, collisions, by = "id")
+# Selecting relevant columns to keep in drivers and collisions
+final_collisions <- decoded_collisions %>%
+  select(
+    id,
+    accident_year,
+    time,
+    date,
+    accident_severity,
+    local_authority_ons_district,
+    light_conditions,
+    weather_conditions,
+    road_surface_conditions
+  )
 
-view(complete_driver_collisions)
+final_drivers <- decoded_drivers %>%
+  select(id,
+         sex_of_driver,
+         age_band_of_driver
+  )
+
+complete_driver_collisions <- merge(final_collisions, final_drivers, by = "id")
+
+write.csv(complete_driver_collisions, "./Data/Clean/complete_driver_collisions.csv")
 
 # **************************************************************#
 # Checking processed data
 # **************************************************************#
 list.files("./Data/Clean")
+

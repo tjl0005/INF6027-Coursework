@@ -3,9 +3,9 @@
 This repository contains the R code and visualisations produced that were completed as coursework for the INF6027 module at the University of Sheffield. The particular purpose of this project is to analyse a set of data to answer research questions. 
 
 The research questions are as follows: 
-1.	Using penalty points and number of collisions is it possible to identify demographic factors (age, location and gender) which have a higher association with dangerous driving?
-2.	Is there a direct relationship between drivers with a higher number of penalty points to those with a higher number of collisions? 
-3.	Which is more relevant in identifying driving risks, demographic data or road conditions (lighting, road surface and weather)?
+1.	N/A
+2.  N/A
+3.  N/A
 
 For each of the R files there is a section below which covers the purpose of the file and how to use it.
 
