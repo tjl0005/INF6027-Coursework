@@ -2,6 +2,7 @@
 # Initial Exploration of Data
 # **************************************************************#
 library(tidyverse)
+library(readxl)
 
 licenses_gender <- read_excel(
   "./Data/Raw/driving-licence-data-sep-2024.xlsx",
@@ -56,7 +57,7 @@ check_missing_data <- function(data, variable, view_data = TRUE) {
 # Collision data, checking relevant variables where confirmed there are -1
 # instances from summary. This gives an idea of how much data is missing.
 check_missing_data(collisions, "local_authority_district", FALSE) # False as unsure of variable relevance and hard to view
-check_missing_data(collisions, "road_surface_conditions")
+check_missing_data(collisions, "road_surface_conditions", FALSE)
 
 # Casualty data, repeating same process.
 check_missing_data(casualties, "sex_of_casualty")
@@ -90,3 +91,4 @@ duplicate_collisions <- check_duplicated_variable(collisions, "accident_referenc
 # Causality reference and class have to be 1 to indicate the driver. Also non-
 # unique accident references.
 duplicate_casualties <- check_duplicated_variable(casualties, "accident_reference")
+

@@ -27,7 +27,7 @@ demographic_collisions_and_points <- demographic_collision_percentages %>%
   # Changing for clarity
   mutate(measure = recode(measure, "percentage.x" = "Collisions", "percentage.y" = "Penalty Points"))
 
-write.csv(demographic_collisions_and_points, "demographic_collisions_and_points.csv")
+write.csv(demographic_collisions_and_points, "./Data/Findings/demographic_collisions_and_points.csv")
 
 # **************************************************************************** #
 # Visualising

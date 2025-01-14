@@ -2,6 +2,7 @@
 # Cleaning and Pre-Processing Data R File
 # **************************************************************#
 library(tidyverse)
+library(readxl)
 
 # **************************************************************#
 # Reading Data
@@ -212,36 +213,6 @@ full_drivers <- unique_drivers %>%
 # **************************************************************#
 # Finalising variables
 # **************************************************************#
-# Decoding condition variables into safe, questionable, unsafe
-decoded_collisions <- full_collisions %>%
-  mutate(
-    light_conditions = case_when(
-      light_conditions == 1 ~ "0",
-      light_conditions == 4 ~ "1",
-      light_conditions == 5 ~ "2",
-      light_conditions == 6 ~ "2",
-      light_conditions == 7 ~ "1"
-    ),
-    weather_conditions = case_when(
-      weather_conditions == 1 ~ "0",
-      weather_conditions == 2 ~ "1",
-      weather_conditions == 3 ~ "2",
-      weather_conditions == 4 ~ "1",
-      weather_conditions == 5 ~ "3",
-      weather_conditions == 6 ~ "3",
-      weather_conditions == 7 ~ "1"
-    ),
-    road_surface_conditions = case_when(
-      road_surface_conditions == 1 ~ "0",
-      road_surface_conditions == 2 ~ "1",
-      road_surface_conditions == 3 ~ "2",
-      road_surface_conditions == 4 ~ "2",
-      road_surface_conditions == 5 ~ "2",
-      road_surface_conditions == 6 ~ "2",
-      road_surface_conditions == 7 ~ "1"
-    )
-  )
-
 # Decoding variables to match license data and improve readability
 decoded_drivers <- full_drivers %>%
   mutate(
@@ -258,16 +229,17 @@ decoded_drivers <- full_drivers %>%
       age_band_of_driver == 10 ~ "66-75",
       age_band_of_driver == 11 ~ "75+"
     )
-  )
+  ) %>%
+  filter(!is.na(age_band_of_driver))
 
 # Setting to substring to represent the hour
-decoded_collisions$time <- substr(decoded_collisions$time, 1, 2)
+full_collisions$time <- substr(full_collisions$time, 1, 2)
 
 # **************************************************************#
 # Merging Collision and casualty Data
 # **************************************************************#
 # Selecting relevant columns to keep in drivers and collisions
-final_collisions <- decoded_collisions %>%
+final_collisions <- full_collisions %>%
   select(
     id,
     accident_year,
@@ -285,6 +257,9 @@ final_drivers <- decoded_drivers %>%
          sex_of_driver,
          age_band_of_driver
   )
+
+nrow(final_collisions)
+nrow(final_drivers)
 
 complete_driver_collisions <- merge(final_collisions, final_drivers, by = "id")
 
